@@ -1,7 +1,9 @@
+import asyncio
 import json
 import os
-import sqlite3
 from pathlib import Path
+
+import aiosqlite
 
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -14,9 +16,9 @@ DB_PATH = Path(os.environ.get("EXPENSE_DB_PATH", Path(__file__).resolve().parent
 mcp = FastMCP(name="Expense_Tracker_server")
 
 
-def init_db() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
+async def init_db() -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
             """
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,12 +30,13 @@ def init_db() -> None:
             )
             """
         )
+        await db.commit()
 
-init_db()
+asyncio.run(init_db())
 
 
 @mcp.tool()
-def add_expense(
+async def add_expense(
     date: str,
     amount: float,
     category: str,
@@ -48,11 +51,12 @@ def add_expense(
     subcategory: optional finer category
     note: optional free-text note
     """
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
             "INSERT INTO expenses (date, amount, category, subcategory, note) VALUES (?, ?, ?, ?, ?)",
             (date, amount, category, subcategory, note),
         )
+        await db.commit()
     return (
         f"Expense added for {date}: {amount} in {category}"
         + (f" / {subcategory}" if subcategory else "")
@@ -61,7 +65,7 @@ def add_expense(
 
 #--------------------------------------------------------
 @mcp.tool()
-def list_expenses(
+async def list_expenses(
     start_date: str | None = None,
     end_date: str | None = None,
     limit: int = 50000,
@@ -87,9 +91,9 @@ def list_expenses(
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
             f"""
             SELECT id, date, amount, category, subcategory, note
             FROM expenses
@@ -98,12 +102,12 @@ def list_expenses(
             LIMIT ?
             """,
             (*params, limit),
-        ).fetchall()
-        count, total = conn.execute(
+        )).fetchall()
+        count, total = await (await db.execute(
             f"SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM expenses {where}",
             params,
-        ).fetchone()
-        by_category = conn.execute(
+        )).fetchone()
+        by_category = await (await db.execute(
             f"""
             SELECT MIN(category) AS category, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total
             FROM expenses
@@ -112,7 +116,7 @@ def list_expenses(
             ORDER BY total DESC
             """,
             params,
-        ).fetchall()
+        )).fetchall()
 
     return {
         "count": count,
@@ -141,14 +145,14 @@ def list_expenses(
 
 #--------------------------------------------------------
 @mcp.tool()
-def get_expense(id: int) -> dict:
+async def get_expense(id: int) -> dict:
     """Get an expense by ID.
 
     id: expense ID
     """
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT * FROM expenses WHERE id = ?", (id,)).fetchone()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute("SELECT * FROM expenses WHERE id = ?", (id,))).fetchone()
         if row is None:
             return {"error": f"Expense {id} not found"}
         return {
@@ -162,7 +166,7 @@ def get_expense(id: int) -> dict:
 #--------------------------------------------------------
 
 @mcp.tool()
-def edit_expense(id: int, date: str, amount: float, category: str, subcategory: str = "", note: str = "") -> str:
+async def edit_expense(id: int, date: str, amount: float, category: str, subcategory: str = "", note: str = "") -> str:
     """Edit an expense by ID.
 
     id: expense ID
@@ -172,18 +176,20 @@ def edit_expense(id: int, date: str, amount: float, category: str, subcategory: 
     subcategory: optional finer category
     note: optional free-text note
     """
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("UPDATE expenses SET date = ?, amount = ?, category = ?, subcategory = ?, note = ? WHERE id = ?", (date, amount, category, subcategory, note, id))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE expenses SET date = ?, amount = ?, category = ?, subcategory = ?, note = ? WHERE id = ?", (date, amount, category, subcategory, note, id))
+        await db.commit()
     return f"Expense updated: {id} {date} {amount} {category} {subcategory} {note}"
 
 #--------------------------------------------------------
 @mcp.tool()
-def delete_expense(id: int) -> str:
+async def delete_expense(id: int) -> str:
     """Delete an expense by ID.
     id: expense ID
     """
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM expenses WHERE id = ?", (id,))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM expenses WHERE id = ?", (id,))
+        await db.commit()
     return f"Expense deleted: {id}"
 
 #--------------------------------------------------------
