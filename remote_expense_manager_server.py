@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 from pathlib import Path
@@ -14,7 +13,13 @@ DB_PATH = Path(os.environ.get("EXPENSE_DB_PATH", Path(__file__).resolve().parent
 mcp = FastMCP(name="Expense_Tracker_server")
 
 
+_ready = False
+
+
 async def init_db() -> None:
+    global _ready
+    if _ready:
+        return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
@@ -29,8 +34,7 @@ async def init_db() -> None:
             """
         )
         await db.commit()
-
-asyncio.run(init_db())
+    _ready = True
 
 
 @mcp.tool()
@@ -49,6 +53,7 @@ async def add_expense(
     subcategory: optional finer category
     note: optional free-text note
     """
+    await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT INTO expenses (date, amount, category, subcategory, note) VALUES (?, ?, ?, ?, ?)",
@@ -89,6 +94,7 @@ async def list_expenses(
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
+    await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         rows = await (await db.execute(
@@ -148,6 +154,7 @@ async def get_expense(id: int) -> dict:
 
     id: expense ID
     """
+    await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         row = await (await db.execute("SELECT * FROM expenses WHERE id = ?", (id,))).fetchone()
@@ -174,6 +181,7 @@ async def edit_expense(id: int, date: str, amount: float, category: str, subcate
     subcategory: optional finer category
     note: optional free-text note
     """
+    await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE expenses SET date = ?, amount = ?, category = ?, subcategory = ?, note = ? WHERE id = ?", (date, amount, category, subcategory, note, id))
         await db.commit()
@@ -185,6 +193,7 @@ async def delete_expense(id: int) -> str:
     """Delete an expense by ID.
     id: expense ID
     """
+    await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM expenses WHERE id = ?", (id,))
         await db.commit()
