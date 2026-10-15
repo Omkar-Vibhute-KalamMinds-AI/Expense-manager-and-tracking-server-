@@ -1,5 +1,2 @@
-json
-sqlite3
-pathlib
-starlette
+
 fastmcp  
