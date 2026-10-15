@@ -1,13 +1,15 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
 
-DB_PATH = Path(__file__).resolve().parent / "expenses.db"
+DB_PATH = Path(os.environ.get("EXPENSE_DB_PATH", Path(__file__).resolve().parent / "expenses.db"))
 
 mcp = FastMCP(name="Expense_Tracker_server")
 
@@ -216,6 +218,45 @@ async def root(request: Request) -> JSONResponse:
     )
 
 
+@mcp.custom_route("/json/version", methods=["GET"])
+async def browser_probe(request: Request) -> JSONResponse:
+    """Browsers ask for a Chrome debug port. This server is not one."""
+    return JSONResponse({"status": "ok", "note": "This is an MCP server, not a browser debug port."})
+
+
+class QuietBrowserGet:
+    """Answer a browser GET /mcp. Real clients send a session id or POST."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("method") == "GET" and scope.get("path") == "/mcp":
+            names = {key.lower() for key, _ in scope.get("headers", [])}
+            if b"mcp-session-id" not in names:
+                body = json.dumps(
+                    {
+                        "status": "ok",
+                        "server": "Expense_Tracker_server",
+                        "mcp_url": "http://127.0.0.1:8000/mcp",
+                        "note": "Streamable HTTP is ready. An MCP client must POST initialize to this URL.",
+                    }
+                ).encode()
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 200,
+                        "headers": [
+                            [b"content-type", b"application/json"],
+                            [b"content-length", str(len(body)).encode()],
+                        ],
+                    }
+                )
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> JSONResponse:
     """HTTP health check. The MCP endpoint is /mcp."""
@@ -230,6 +271,12 @@ async def health_check(request: Request) -> JSONResponse:
 
 if __name__ == "__main__":
     # Streamable HTTP. Clients POST to http://127.0.0.1:8000/mcp
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8000, path="/mcp")
+    mcp.run(
+        transport="streamable-http",
+        host="0.0.0.0",
+        port=8000,
+        path="/mcp",
+        middleware=[Middleware(QuietBrowserGet)],
+    )
 
     
