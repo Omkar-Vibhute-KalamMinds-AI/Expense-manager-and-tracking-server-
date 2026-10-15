@@ -71,7 +71,7 @@ async def add_expense(
 async def list_expenses(
     start_date: str | None = None,
     end_date: str | None = None,
-    limit: int = 50000,
+    limit: int | None = None,
 
 ) -> dict:
     """List expenses, newest first, with optional filters.
@@ -80,7 +80,7 @@ async def list_expenses(
     matches are case-insensitive. Returns the matching rows, how many
     matched, the total amount, and a breakdown by category.
     """
-    limit = max(1, min(limit, 200))
+    limit = max(1, min(limit or 50000, 200))
 
     clauses: list[str] = []
     params: list[object] = []
