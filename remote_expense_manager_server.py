@@ -57,8 +57,6 @@ async def open_db():
         await db.execute("PRAGMA journal_mode=OFF")
         yield db
 
-mcp = FastMCP(name="Expense_Tracker_server")
-
 _ready = False
 
 async def init_db() -> None:
@@ -94,6 +92,15 @@ async def _migrate_legacy_dates(db: aiosqlite.Connection) -> None:
         if normalized != raw_date:
             await db.execute("UPDATE expenses SET date = ? WHERE id = ?", (normalized, row_id))
     await db.commit()
+
+
+@asynccontextmanager
+async def app_lifespan(server):
+    await init_db()
+    yield {}
+
+
+mcp = FastMCP(name="Expense_Tracker_server", lifespan=app_lifespan)
 
 
 @mcp.tool()
@@ -383,5 +390,6 @@ if __name__ == "__main__":
         )
         
     except KeyboardInterrupt:
-        pass    
-    
+        pass   
+
+
