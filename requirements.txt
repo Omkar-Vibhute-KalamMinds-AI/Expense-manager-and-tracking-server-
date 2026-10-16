@@ -1,4 +1,5 @@
 aiosqlite
 fastmcp
 fastapi
-uvicorn 
+uvicorn
+python-dotenv 

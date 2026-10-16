@@ -4,11 +4,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 import aiosqlite
+from dotenv import load_dotenv
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 MCP_PATH = "/mcp"
 SERVER_HOST = os.environ.get("EXPENSE_SERVER_HOST", "0.0.0.0")
@@ -383,9 +386,9 @@ if __name__ == "__main__":
     try: 
         mcp.run(
             transport="streamable-http",
-            host= "127.0.0.1",
-            port=8001,
-            path="/mcp",
+            host=SERVER_HOST,
+            port=SERVER_PORT,
+            path=MCP_PATH,
             middleware=[Middleware(QuietBrowserGet)],
         )
         

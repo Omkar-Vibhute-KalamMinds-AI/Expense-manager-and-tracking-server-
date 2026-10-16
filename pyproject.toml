@@ -9,4 +9,5 @@ dependencies = [
     "fastapi>=0.143.2",
     "fastmcp>=4.1.0",
     "uvicorn>=0.54.0",
+    "python-dotenv>=1.0.0",
 ]
