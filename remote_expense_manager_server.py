@@ -290,6 +290,4 @@ if __name__ == "__main__":
         port=8000,
         path="/mcp",
         middleware=[Middleware(QuietBrowserGet)],
-    )
-
-    
+    ) 
