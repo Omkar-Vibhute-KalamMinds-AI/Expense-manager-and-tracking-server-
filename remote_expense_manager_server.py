@@ -9,7 +9,16 @@ from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
 
-DB_PATH = Path(os.environ.get("EXPENSE_DB_PATH", Path(os.environ["LOCALAPPDATA"]) / "ExpenseTracker" / "expenses.db"))
+def _db_path() -> Path:
+    if os.environ.get("EXPENSE_DB_PATH"):
+        return Path(os.environ["EXPENSE_DB_PATH"])
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        return Path(local) / "ExpenseTracker" / "expenses.db"
+    return Path(__file__).resolve().parent / "expenses.db"
+
+
+DB_PATH = _db_path()
 
 
 @asynccontextmanager
