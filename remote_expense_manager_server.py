@@ -283,11 +283,13 @@ async def health_check(request: Request) -> JSONResponse:
 
 
 if __name__ == "__main__":
-    # Streamable HTTP. Clients POST to http://127.0.0.1:8000/mcp
-    mcp.run(
-        transport="streamable-http",
-        host="0.0.0.0",
-        port=8000,
-        path="/mcp",
-        middleware=[Middleware(QuietBrowserGet)],
-    ) 
+    try:
+        mcp.run(
+            transport="streamable-http",
+            host="0.0.0.0",
+            port=8000,
+            path="/mcp",
+            middleware=[Middleware(QuietBrowserGet)],
+        )
+    except KeyboardInterrupt:
+        pass 
