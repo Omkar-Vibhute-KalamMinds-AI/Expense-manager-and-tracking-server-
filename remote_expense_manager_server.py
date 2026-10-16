@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 import aiosqlite
 from starlette.middleware import Middleware
@@ -8,7 +9,15 @@ from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
 
-DB_PATH = Path(os.environ.get("EXPENSE_DB_PATH", Path(__file__).resolve().parent / "expenses.db"))
+DB_PATH = Path(os.environ.get("EXPENSE_DB_PATH", Path(os.environ["LOCALAPPDATA"]) / "ExpenseTracker" / "expenses.db"))
+
+
+@asynccontextmanager
+async def open_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=OFF")
+        yield db
 
 mcp = FastMCP(name="Expense_Tracker_server")
 
@@ -20,7 +29,7 @@ async def init_db() -> None:
     global _ready
     if _ready:
         return
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with open_db() as db:
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS expenses (
@@ -54,7 +63,7 @@ async def add_expense(
     note: optional free-text note
     """
     await init_db()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with open_db() as db:
         await db.execute(
             "INSERT INTO expenses (date, amount, category, subcategory, note) VALUES (?, ?, ?, ?, ?)",
             (date, amount, category, subcategory, note),
@@ -95,7 +104,7 @@ async def list_expenses(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
     await init_db()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with open_db() as db:
         db.row_factory = aiosqlite.Row
         rows = await (await db.execute(
             f"""
@@ -155,7 +164,7 @@ async def get_expense(id: int) -> dict:
     id: expense ID
     """
     await init_db()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with open_db() as db:
         db.row_factory = aiosqlite.Row
         row = await (await db.execute("SELECT * FROM expenses WHERE id = ?", (id,))).fetchone()
         if row is None:
@@ -182,7 +191,7 @@ async def edit_expense(id: int, date: str, amount: float, category: str, subcate
     note: optional free-text note
     """
     await init_db()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with open_db() as db:
         await db.execute("UPDATE expenses SET date = ?, amount = ?, category = ?, subcategory = ?, note = ? WHERE id = ?", (date, amount, category, subcategory, note, id))
         await db.commit()
     return f"Expense updated: {id} {date} {amount} {category} {subcategory} {note}"
@@ -194,7 +203,7 @@ async def delete_expense(id: int) -> str:
     id: expense ID
     """
     await init_db()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with open_db() as db:
         await db.execute("DELETE FROM expenses WHERE id = ?", (id,))
         await db.commit()
     return f"Expense deleted: {id}"
