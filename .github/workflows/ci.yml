@@ -1,0 +1,27 @@
+﻿name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check the expense server
+        run: |
+          if [ -f remote_expense_manager_server.py ] && [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+            python -m compileall remote_expense_manager_server.py
+            python -c "import remote_expense_manager_server"
+          else
+            echo "Server file is not in this commit yet."
+          fi
