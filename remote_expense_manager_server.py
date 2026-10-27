@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -18,13 +19,27 @@ SERVER_HOST = os.environ.get("EXPENSE_SERVER_HOST", "0.0.0.0")
 SERVER_PORT = int(os.environ.get("EXPENSE_SERVER_PORT", "8000"))
 
 
+def _usable_db(path: Path) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch(exist_ok=True)
+        with path.open("a+b"):
+            pass
+        return True
+    except OSError:
+        return False
+
+
 def _db_path() -> Path:
-    if os.environ.get("EXPENSE_DB_PATH"):
-        return Path(os.environ["EXPENSE_DB_PATH"])
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        return Path(local) / "ExpenseTracker" / "expenses.db"
-    return Path(__file__).resolve().parent / "expenses.db"
+    project_db = Path(__file__).resolve().parent / "expenses.db"
+    override = os.environ.get("EXPENSE_DB_PATH")
+    candidates = [Path(override)] if override else []
+    candidates.append(project_db)
+    candidates.append(Path(tempfile.gettempdir()) / "expenses.db")
+    for path in candidates:
+        if _usable_db(path):
+            return path
+    return project_db
 
 
 DB_PATH = _db_path()

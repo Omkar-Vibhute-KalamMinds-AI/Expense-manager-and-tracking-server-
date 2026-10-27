@@ -1,0 +1,18 @@
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "remote_expense_manager_server.py",
+    "entrypoint": "mcp"
+  },
+  "environment": {
+    "python": "3.12",
+    "dependencies": [
+      "fastmcp==4.1.0",
+      "fastmcp-slim[client,server]==4.1.0",
+      "aiosqlite>=0.22.1",
+      "python-dotenv>=1.0.0",
+      "starlette>=0.37.0",
+      "uvicorn>=0.30.0"
+    ]
+  }
+}
