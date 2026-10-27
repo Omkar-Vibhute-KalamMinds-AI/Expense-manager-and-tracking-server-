@@ -1,4 +1,4 @@
-aiosqlite
-fastmcp
-uvicorn
-python-dotenv 
+fastmcp>=4.1.0
+aiosqlite>=0.22.1
+uvicorn>=0.30.0
+python-dotenv>=1.0.0
