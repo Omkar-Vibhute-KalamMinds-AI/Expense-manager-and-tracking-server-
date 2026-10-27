@@ -352,7 +352,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.143.2" },
     { name = "fastmcp", specifier = ">=4.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "uvicorn", specifier = ">=0.54.0" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
 [[package]]
