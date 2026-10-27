@@ -1,13 +1,22 @@
 import json
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 import aiosqlite
+from dotenv import load_dotenv
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from fastmcp import FastMCP
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+MCP_PATH = "/mcp"
+SERVER_HOST = os.environ.get("EXPENSE_SERVER_HOST", "0.0.0.0")
+SERVER_PORT = int(os.environ.get("EXPENSE_SERVER_PORT", "8000"))
+
 
 def _db_path() -> Path:
     if os.environ.get("EXPENSE_DB_PATH"):
@@ -21,6 +30,29 @@ def _db_path() -> Path:
 DB_PATH = _db_path()
 
 
+def normalize_date(date: str) -> str:
+    """Accept YYYY-MM-DD or DD-MM-YYYY; store and compare as YYYY-MM-DD."""
+    value = date.strip()
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    raise ValueError(f"Invalid date '{date}': use YYYY-MM-DD or DD-MM-YYYY")
+
+
+def mcp_url_from_request(request: Request) -> str:
+    base = request.base_url
+    return f"{base.scheme}://{base.netloc}{MCP_PATH}"
+
+
+def mcp_url_from_scope(scope: dict) -> str:
+    headers = {k.lower(): v for k, v in scope.get("headers", [])}
+    host = headers.get(b"host", b"127.0.0.1").decode()
+    scheme = scope.get("scheme", "http")
+    return f"{scheme}://{host}{MCP_PATH}"
+
+
 @asynccontextmanager
 async def open_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -28,11 +60,7 @@ async def open_db():
         await db.execute("PRAGMA journal_mode=OFF")
         yield db
 
-mcp = FastMCP(name="Expense_Tracker_server")
-
-
 _ready = False
-
 
 async def init_db() -> None:
     global _ready
@@ -52,7 +80,30 @@ async def init_db() -> None:
             """
         )
         await db.commit()
+        await _migrate_legacy_dates(db)
     _ready = True
+
+
+async def _migrate_legacy_dates(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("SELECT id, date FROM expenses")
+    rows = await cursor.fetchall()
+    for row_id, raw_date in rows:
+        try:
+            normalized = normalize_date(raw_date)
+        except ValueError:
+            continue
+        if normalized != raw_date:
+            await db.execute("UPDATE expenses SET date = ? WHERE id = ?", (normalized, row_id))
+    await db.commit()
+
+
+@asynccontextmanager
+async def app_lifespan(server):
+    await init_db()
+    yield {}
+
+
+mcp = FastMCP(name="Expense_Tracker_server", lifespan=app_lifespan)
 
 
 @mcp.tool()
@@ -65,12 +116,16 @@ async def add_expense(
 ) -> str:
     """Add a new expense to the database.
 
-    date: YYYY-MM-DD
+    date: YYYY-MM-DD or DD-MM-YYYY (stored as YYYY-MM-DD)
     amount: expense amount
     category: top-level category such as Food or Transport
     subcategory: optional finer category
     note: optional free-text note
     """
+    try:
+        date = normalize_date(date)
+    except ValueError as exc:
+        return str(exc)
     await init_db()
     async with open_db() as db:
         await db.execute(
@@ -89,8 +144,9 @@ async def add_expense(
 async def list_expenses(
     start_date: str | None = None,
     end_date: str | None = None,
+    category: str | None = None,
+    subcategory: str | None = None,
     limit: int | None = None,
-
 ) -> dict:
     """List expenses, newest first, with optional filters.
 
@@ -104,11 +160,25 @@ async def list_expenses(
     params: list[object] = []
 
     if start_date:
+        try:
+            start_date = normalize_date(start_date)
+        except ValueError as exc:
+            return {"error": str(exc)}
         clauses.append("date >= ?")
         params.append(start_date)
     if end_date:
+        try:
+            end_date = normalize_date(end_date)
+        except ValueError as exc:
+            return {"error": str(exc)}
         clauses.append("date <= ?")
         params.append(end_date)
+    if category:
+        clauses.append("LOWER(category) = LOWER(?)")
+        params.append(category.strip())
+    if subcategory:
+        clauses.append("LOWER(subcategory) = LOWER(?)")
+        params.append(subcategory.strip())
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
@@ -193,16 +263,25 @@ async def edit_expense(id: int, date: str, amount: float, category: str, subcate
     """Edit an expense by ID.
 
     id: expense ID
-    date: YYYY-MM-DD
+    date: YYYY-MM-DD or DD-MM-YYYY (stored as YYYY-MM-DD)
     amount: expense amount
     category: top-level category such as Food or Transport
     subcategory: optional finer category
     note: optional free-text note
     """
+    try:
+        date = normalize_date(date)
+    except ValueError as exc:
+        return str(exc)
     await init_db()
     async with open_db() as db:
-        await db.execute("UPDATE expenses SET date = ?, amount = ?, category = ?, subcategory = ?, note = ? WHERE id = ?", (date, amount, category, subcategory, note, id))
+        cursor = await db.execute(
+            "UPDATE expenses SET date = ?, amount = ?, category = ?, subcategory = ?, note = ? WHERE id = ?",
+            (date, amount, category, subcategory, note, id),
+        )
         await db.commit()
+        if cursor.rowcount == 0:
+            return f"Expense {id} not found"
     return f"Expense updated: {id} {date} {amount} {category} {subcategory} {note}"
 
 #--------------------------------------------------------
@@ -213,8 +292,10 @@ async def delete_expense(id: int) -> str:
     """
     await init_db()
     async with open_db() as db:
-        await db.execute("DELETE FROM expenses WHERE id = ?", (id,))
+        cursor = await db.execute("DELETE FROM expenses WHERE id = ?", (id,))
         await db.commit()
+        if cursor.rowcount == 0:
+            return f"Expense {id} not found"
     return f"Expense deleted: {id}"
 
 #--------------------------------------------------------
@@ -240,10 +321,11 @@ def server_info() -> str:
 async def root(request: Request) -> JSONResponse:
     """Browser landing page. MCP clients must use /mcp, not this URL."""
     return JSONResponse(
+        
         {
             "status": "ok",
             "server": "Expense_Tracker_server",
-            "mcp_url": "http://127.0.0.1:8000/mcp",
+            "mcp_url": mcp_url_from_request(request),
             "note": "Streamable HTTP clients connect to mcp_url.",
         }
     )
@@ -269,7 +351,7 @@ class QuietBrowserGet:
                     {
                         "status": "ok",
                         "server": "Expense_Tracker_server",
-                        "mcp_url": "http://127.0.0.1:8000/mcp",
+                        "mcp_url": mcp_url_from_scope(scope),
                         "note": "Streamable HTTP is ready. An MCP client must POST initialize to this URL.",
                     }
                 ).encode()
@@ -295,19 +377,22 @@ async def health_check(request: Request) -> JSONResponse:
         {
             "status": "ok",
             "server": "Expense_Tracker_server",
-            "mcp_url": "http://127.0.0.1:8000/mcp",
+            "mcp_url": mcp_url_from_request(request),
         }
     )
 
 
 if __name__ == "__main__":
-    try:
+    try: 
         mcp.run(
             transport="streamable-http",
-            host="0.0.0.0",
-            port=8000,
-            path="/mcp",
+            host=SERVER_HOST,
+            port=SERVER_PORT,
+            path=MCP_PATH,
             middleware=[Middleware(QuietBrowserGet)],
         )
+        
     except KeyboardInterrupt:
-        pass 
+        pass   
+
+

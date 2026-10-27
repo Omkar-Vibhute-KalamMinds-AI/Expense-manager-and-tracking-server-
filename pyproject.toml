@@ -1,10 +1,13 @@
 [project]
-name = "mcp-weather"
+name = "expense-manager-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "Personal expense manager and tracker server"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "aiosqlite>=0.21.0",
+    "aiosqlite>=0.22.1",
+    "fastapi>=0.143.2",
     "fastmcp>=4.1.0",
+    "uvicorn>=0.54.0",
+    "python-dotenv>=1.0.0",
 ]

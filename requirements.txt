@@ -1,3 +1,5 @@
-
+aiosqlite
 fastmcp
-aiosqlite 
+fastapi
+uvicorn
+python-dotenv 
