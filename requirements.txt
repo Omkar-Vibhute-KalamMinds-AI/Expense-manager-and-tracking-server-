@@ -1,5 +1,4 @@
 aiosqlite
 fastmcp
-fastapi
 uvicorn
 python-dotenv 
